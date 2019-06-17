@@ -30,7 +30,15 @@ namespace Gala
 
 	public class WindowManagerGala : Meta.Plugin, WindowManager
 	{
-		/**
+  	const string LOGIND_DBUS_NAME = "org.freedesktop.login1";
+		const string LOGIND_DBUS_OBJECT_PATH = "/org/freedesktop/login1";
+
+		static bool is_nvidia ()
+		{
+			return RendererInfo.get_default ().vendor == Vendor.NVIDIA;
+		}
+    
+    /**
 		 * {@inheritDoc}
 		 */
 		public Clutter.Actor ui_group { get; protected set; }
