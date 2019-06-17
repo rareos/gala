@@ -63,7 +63,7 @@ namespace Gala
 			unowned Meta.Display display = window.get_display ();
 			var children = get_children ();
 			
-			GLib.SList<unowned Meta.Window> windows = new GLib.SList<unowned Meta.Window> ();
+			GLib.SList<Meta.Window> windows = new GLib.SList<Meta.Window> ();
 			foreach (unowned Actor child in children) {
 				unowned WindowClone tw = (WindowClone) child;
 				windows.prepend (tw.window);
@@ -149,7 +149,7 @@ namespace Gala
 			unowned Meta.Display display = screen.get_display ();
 			var children = get_children ();
 
-			GLib.SList<unowned Meta.Window> windows = new GLib.SList<unowned Meta.Window> ();
+			GLib.SList<Meta.Window> windows = new GLib.SList<Meta.Window> ();
 			foreach (unowned Actor child in children) {
 				unowned WindowClone tw = (WindowClone) child;
 				windows.prepend (tw.window);
@@ -308,10 +308,14 @@ namespace Gala
 		/**
 		 * Emit the selected signal for the current_window.
 		 */
-		public void activate_selected_window ()
+		public bool activate_selected_window ()
 		{
-			if (current_window != null)
+			if (current_window != null) {
 				current_window.selected ();
+				return true;
+			}
+
+			return false;
 		}
 
 		/**

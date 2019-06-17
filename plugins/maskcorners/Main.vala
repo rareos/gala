@@ -50,11 +50,7 @@ namespace Gala.Plugins.MaskCorners
 			if (!settings.enable)
 				return;
 
-#if HAS_MUTTER326
-			var scale = Meta.Backend.get_backend ().get_settings ().get_ui_scaling_factor ();
-#else
-			var scale = 1;
-#endif
+			var scale = Utils.get_ui_scaling_factor ();
 
 			int n_monitors = screen.get_n_monitors ();
 			cornermasks = new List<Actor>[n_monitors];
@@ -71,10 +67,18 @@ namespace Gala.Plugins.MaskCorners
 				screen.in_fullscreen_changed.connect (fullscreen_changed);
 
 			screen.monitors_changed.connect (resetup_cornermasks);
+
+#if HAS_MUTTER322
+			screen.get_display ().gl_video_memory_purged.connect (resetup_cornermasks);
+#endif
 		}
 
 		void destroy_cornermasks ()
 		{
+#if HAS_MUTTER322
+			screen.get_display ().gl_video_memory_purged.disconnect (resetup_cornermasks);
+#endif
+
 			screen.monitors_changed.disconnect (resetup_cornermasks);
 			screen.in_fullscreen_changed.disconnect (fullscreen_changed);
 

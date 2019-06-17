@@ -22,8 +22,6 @@ namespace Gala.Plugins.Notify
 {
 	public abstract class Notification : Actor
 	{
-		public static Gtk.CssProvider? default_css = null;
-
 		public const int WIDTH = 300;
 		public const int ICON_SIZE = 48;
 		public const int MARGIN = 12;
@@ -75,7 +73,7 @@ namespace Gala.Plugins.Notify
 			}
 		}
 
-		public Notification (uint32 id, Gdk.Pixbuf? icon, NotificationUrgency urgency,
+		protected Notification (uint32 id, Gdk.Pixbuf? icon, NotificationUrgency urgency,
 			int32 expire_timeout)
 		{
 			Object (
@@ -88,11 +86,7 @@ namespace Gala.Plugins.Notify
 
 		construct
 		{
-#if HAS_MUTTER326
-			var scale = Meta.Backend.get_backend ().get_settings ().get_ui_scaling_factor ();
-#else
-			var scale = 1;
-#endif
+			var scale = Utils.get_ui_scaling_factor ();
 			relevancy_time = new DateTime.now_local ().to_unix ();
 			width = (WIDTH + MARGIN * 2) * scale;
 			reactive = true;
@@ -119,21 +113,12 @@ namespace Gala.Plugins.Notify
 			add_child (icon_container);
 			add_child (close_button);
 
-			if (default_css == null) {
-				default_css = new Gtk.CssProvider ();
-				try {
-					default_css.load_from_path (Config.PKGDATADIR + "/gala.css");
-				} catch (Error e) {
-					warning ("Loading default styles failed: %s", e.message);
-				}
-			}
-
 			var style_path = new Gtk.WidgetPath ();
 			style_path.append_type (typeof (Gtk.Window));
 			style_path.append_type (typeof (Gtk.EventBox));
 
 			style_context = new Gtk.StyleContext ();
-			style_context.add_provider (default_css, Gtk.STYLE_PROVIDER_PRIORITY_FALLBACK);
+			style_context.add_provider (Gala.Utils.get_gala_css (), Gtk.STYLE_PROVIDER_PRIORITY_FALLBACK);
 			style_context.add_class ("gala-notification");
 			style_context.set_path (style_path);
 			style_context.set_scale (scale);

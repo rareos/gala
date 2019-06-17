@@ -28,23 +28,17 @@ namespace Gala
 		public abstract async void show_window_menu (WindowFlags flags, int x, int y) throws Error;
 	}
 
-	[DBus (name = "org.freedesktop.login1.Manager")]
-	public interface LoginDRemote : GLib.Object
-	{
-		public signal void prepare_for_sleep (bool suspending);
-	}
-
 	public class WindowManagerGala : Meta.Plugin, WindowManager
 	{
-		const string LOGIND_DBUS_NAME = "org.freedesktop.login1";
+  	const string LOGIND_DBUS_NAME = "org.freedesktop.login1";
 		const string LOGIND_DBUS_OBJECT_PATH = "/org/freedesktop/login1";
 
 		static bool is_nvidia ()
 		{
 			return RendererInfo.get_default ().vendor == Vendor.NVIDIA;
 		}
-
-		/**
+    
+    /**
 		 * {@inheritDoc}
 		 */
 		public Clutter.Actor ui_group { get; protected set; }
@@ -83,7 +77,6 @@ namespace Gala
 
 		Window? moving; //place for the window that is being moved over
 
-		LoginDRemote? logind_proxy = null;
 		Daemon? daemon_proxy = null;
 
 		Gee.LinkedList<ModalProxy> modal_stack = new Gee.LinkedList<ModalProxy> ();
@@ -113,18 +106,14 @@ namespace Gala
 		{
 			Util.later_add (LaterType.BEFORE_REDRAW, show_stage);
 
-			// Handle FBO issue with nvidia blob
-			if (logind_proxy == null
-				&& is_nvidia ()) {
-				try {
-					logind_proxy = Bus.get_proxy_sync (BusType.SYSTEM, LOGIND_DBUS_NAME, LOGIND_DBUS_OBJECT_PATH);
-					logind_proxy.prepare_for_sleep.connect (prepare_for_sleep);
-				} catch (Error e) {
-					warning ("Failed to get LoginD proxy: %s", e.message);
-				}
-			}
-
 			Bus.watch_name (BusType.SESSION, DAEMON_DBUS_NAME, BusNameWatcherFlags.NONE, daemon_appeared, lost_daemon);
+
+#if HAS_MUTTER322
+			get_screen ().get_display ().gl_video_memory_purged.connect (() => {
+				Meta.Background.refresh_all ();
+				SystemBackground.refresh ();
+			});
+#endif
 		}
 
 		void on_menu_get (GLib.Object? o, GLib.AsyncResult? res)
@@ -146,14 +135,6 @@ namespace Gala
 			if (daemon_proxy == null) {
 				Bus.get_proxy.begin<Daemon> (BusType.SESSION, DAEMON_DBUS_NAME, DAEMON_DBUS_OBJECT_PATH, 0, null, on_menu_get);
 			}
-		}
-
-		void prepare_for_sleep (bool suspending)
-		{
-			if (suspending)
-				return;
-
-			Meta.Background.refresh_all ();
 		}
 
 		bool show_stage ()
@@ -527,7 +508,7 @@ namespace Gala
 					|| window.minimized) {
 					return;
 				}
-	
+
 				var actor = window.get_compositor_private () as Clutter.Actor;
 				if (enable_animations) {
 					var op_trans = new Clutter.KeyframeTransition ("opacity");
@@ -538,7 +519,7 @@ namespace Gala
 					op_trans.set_to_value (255.0f);
 					op_trans.set_key_frames (op_keyframes);
 					op_trans.set_values (opacity);
-	
+
 					actor.add_transition ("opacity-hide", op_trans);
 				} else {
 					Timeout.add ((uint)(fade_out_duration * op_keyframes[0]), () => {
@@ -602,7 +583,8 @@ namespace Gala
 			var next = active.get_neighbor (direction);
 
 			//dont allow empty workspaces to be created by moving, if we have dynamic workspaces
-			if (Prefs.get_dynamic_workspaces () && Utils.get_n_windows (active) == 1 && next.index () ==  screen.n_workspaces - 1) {
+			if ((Prefs.get_dynamic_workspaces () && Utils.get_n_windows (active) == 1 && next.index () == screen.n_workspaces - 1)
+				|| (active == next)) {
 				Utils.bell (screen);
 				return;
 			}
@@ -992,28 +974,36 @@ namespace Gala
 			if (window.get_tile_match () != null) {
 				size_change_completed (actor);
 				return;
-			}	
+			}
 
-			ulong signal_id = 0U;
-			signal_id = window.size_changed.connect (() => {
-				window.disconnect (signal_id);
-				var new_rect = window.get_frame_rect ();
-				
-				switch (which_change) {
-					case Meta.SizeChange.MAXIMIZE:
-						maximize (actor, new_rect.x, new_rect.y, new_rect.width, new_rect.height);
-						break;
-					case Meta.SizeChange.UNMAXIMIZE:
-						unmaximize (actor, new_rect.x, new_rect.y, new_rect.width, new_rect.height);
-						break;
-					case Meta.SizeChange.FULLSCREEN:
-					case Meta.SizeChange.UNFULLSCREEN:
-						handle_fullscreen_window (actor.get_meta_window (), which_change);
-						break;
-				}
+			ulong size_signal_id = 0U;
+			ulong position_signal_id = 0U;
+			size_signal_id = window.size_changed.connect (() => window_change_complete (actor, which_change, size_signal_id, position_signal_id));
+			position_signal_id = window.position_changed.connect (() => window_change_complete (actor, which_change, size_signal_id, position_signal_id));
+		}
 
-				size_change_completed (actor);
-			});
+		void window_change_complete (Meta.WindowActor actor, Meta.SizeChange which_change, ulong size_signal_id, ulong position_signal_id) {
+			unowned Meta.Window window = actor.get_meta_window ();
+
+			window.disconnect (size_signal_id);
+			window.disconnect (position_signal_id);
+
+			var new_rect = window.get_frame_rect ();
+
+			switch (which_change) {
+				case Meta.SizeChange.MAXIMIZE:
+					maximize (actor, new_rect.x, new_rect.y, new_rect.width, new_rect.height);
+					break;
+				case Meta.SizeChange.UNMAXIMIZE:
+					unmaximize (actor, new_rect.x, new_rect.y, new_rect.width, new_rect.height);
+					break;
+				case Meta.SizeChange.FULLSCREEN:
+				case Meta.SizeChange.UNFULLSCREEN:
+					handle_fullscreen_window (window, which_change);
+					break;
+			}
+
+			size_change_completed (actor);
 		}
 
 		public override void minimize (WindowActor actor)
@@ -1036,6 +1026,12 @@ namespace Gala
 
 			Rectangle icon = {};
 			if (actor.get_meta_window ().get_icon_geometry (out icon)) {
+				// Fix icon position and size according to ui scaling factor.
+				int ui_scale = InternalUtils.get_ui_scaling_factor ();
+				icon.x *= ui_scale;
+				icon.y *= ui_scale;
+				icon.width *= ui_scale;
+				icon.height *= ui_scale;
 
 				float scale_x  = (float)icon.width  / actor.width;
 				float scale_y  = (float)icon.height / actor.height;
@@ -1740,7 +1736,7 @@ namespace Gala
 			in_group.x = -x2;
 			wallpaper_clone.x = -x2;
 
-			// The wallpapers need to move upwards inside the container to match their 
+			// The wallpapers need to move upwards inside the container to match their
 			// original position before/after the transition.
 			if (move_primary_only) {
 				wallpaper.y = -monitor_geom.y;
